@@ -1,0 +1,101 @@
+{
+  "name": "Zoom Meeting Web Client",
+  "type": "WebSocket Server",
+  "path": "Software",
+  "version": "1.0.0",
+  "description": "Receives and parses Zoom Web Client meeting events (speaker, mute, video, participants, chat) sent over WebSocket",
+  "url": "https://github.com/UUoocl/Zoom-Meeting-Web-Client-Chataigne-Module",
+  "hasInput": true,
+  "hasOutput": false,
+  "hideDefaultCommands": true,
+  "defaults": {
+    "protocol": "JSON",
+    "localPort": 8080,
+    "autoAdd": true
+  },
+  "hideDefaultParameters": [
+    "useSecureConnection",
+    "protocol",
+    "autoAdd",
+    "messageStructure",
+    "customSeparator",
+    "firstValueIsTheName",
+    "passThrough"
+  ],
+  "parameters": {},
+  "values": {
+    "connectionStatus": {
+      "type": "String",
+      "default": "disconnected",
+      "readOnly": true,
+      "description": "WebSocket injector connection status (disconnected, connected)"
+    },
+    "activeSpeaker": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Name of the current active speaker in the Zoom meeting"
+    },
+    "muted": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the local Zoom microphone is muted"
+    },
+    "videoOff": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the local Zoom camera is turned off"
+    },
+    "participantsCount": {
+      "type": "Integer",
+      "default": 0,
+      "min": 0,
+      "readOnly": true,
+      "description": "Current number of participants in the Zoom meeting"
+    },
+    "lastChatSender": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Sender of the most recent Zoom chat message"
+    },
+    "lastChatMessage": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Text of the most recent Zoom chat message"
+    },
+    "event": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Last event type received from the Zoom injector (connectionStatus, stateUpdate, chatMessage)"
+    },
+    "error": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Error message reported by the Zoom Web Client injector"
+    },
+    "onChatMessage": {
+      "type": "Trigger",
+      "readOnly": true,
+      "description": "Triggered when a new Zoom chat message is received"
+    },
+    "onStateChanged": {
+      "type": "Trigger",
+      "readOnly": true,
+      "description": "Triggered when muted, videoOff, activeSpeaker, or participantsCount changes"
+    },
+    "responseReceived": {
+      "type": "Trigger",
+      "readOnly": true,
+      "description": "Triggered whenever a WebSocket message arrives from the Zoom Web Client"
+    }
+  },
+  "scripts": [
+    "zoomWebClient.js"
+  ]
+}
