@@ -2,11 +2,11 @@
   "name": "Zoom Meeting Web Client",
   "type": "WebSocket Server",
   "path": "Software",
-  "version": "1.0.0",
-  "description": "Receives and parses Zoom Web Client meeting events (speaker, mute, video, participants, chat) sent over WebSocket",
+  "version": "1.2.0",
+  "description": "Receives Zoom Web Client meeting events and sends bidirectional commands (chat, reactions, mute, video, hand raised) over WebSocket",
   "url": "https://github.com/UUoocl/Zoom-Meeting-Web-Client-Chataigne-Module",
   "hasInput": true,
-  "hasOutput": false,
+  "hasOutput": true,
   "hideDefaultCommands": true,
   "defaults": {
     "protocol": "JSON",
@@ -30,6 +30,12 @@
       "readOnly": true,
       "description": "WebSocket injector connection status (disconnected, connected)"
     },
+    "meetingTitle": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Title of the current Zoom meeting"
+    },
     "activeSpeaker": {
       "type": "String",
       "default": "",
@@ -47,6 +53,12 @@
       "default": false,
       "readOnly": true,
       "description": "Whether the local Zoom camera is turned off"
+    },
+    "handRaised": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the local user's hand is currently raised"
     },
     "participantsCount": {
       "type": "Integer",
@@ -67,11 +79,36 @@
       "readOnly": true,
       "description": "Text of the most recent Zoom chat message"
     },
+    "lastReactionSender": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Sender of the most recent Zoom reaction"
+    },
+    "lastReactionEmoji": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Emoji character of the most recent Zoom reaction"
+    },
+    "lastReactionCode": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Unicode hex codepoint of the most recent Zoom reaction (e.g. 1f44d)"
+    },
+    "reactionCount": {
+      "type": "Integer",
+      "default": 0,
+      "min": 0,
+      "readOnly": true,
+      "description": "Running count of reactions received in this session"
+    },
     "event": {
       "type": "String",
       "default": "",
       "readOnly": true,
-      "description": "Last event type received from the Zoom injector (connectionStatus, stateUpdate, chatMessage)"
+      "description": "Last event type received from the Zoom injector (connectionStatus, stateUpdate, chatMessage, reaction)"
     },
     "error": {
       "type": "String",
@@ -84,10 +121,15 @@
       "readOnly": true,
       "description": "Triggered when a new Zoom chat message is received"
     },
+    "onReaction": {
+      "type": "Trigger",
+      "readOnly": true,
+      "description": "Triggered when a Zoom reaction is received"
+    },
     "onStateChanged": {
       "type": "Trigger",
       "readOnly": true,
-      "description": "Triggered when muted, videoOff, activeSpeaker, or participantsCount changes"
+      "description": "Triggered when muted, videoOff, handRaised, activeSpeaker, participantsCount, or meetingTitle changes"
     },
     "responseReceived": {
       "type": "Trigger",
@@ -97,5 +139,70 @@
   },
   "scripts": [
     "zoomWebClient.js"
-  ]
+  ],
+  "commands": {
+    "Send Chat Message": {
+      "menu": "",
+      "callback": "sendChatMessage",
+      "parameters": {
+        "Message": {
+          "type": "String",
+          "default": ""
+        }
+      }
+    },
+    "Send Reaction": {
+      "menu": "",
+      "callback": "sendReaction",
+      "parameters": {
+        "Reaction": {
+          "type": "Enum",
+          "options": {
+            "Clapping Hands": "clapping hands",
+            "Thumbs Up": "thumbs up",
+            "Tears of Joy": "face with tears of joy",
+            "Open Mouth": "face with open mouth",
+            "Red Heart": "red heart",
+            "Party Popper": "party popper",
+            "Yes": "Yes",
+            "No": "No",
+            "Slow down": "Slow down",
+            "Speed up": "Speed up",
+            "I'm away": "I'm away",
+            "Be right back": "Be right back"
+          }
+        }
+      }
+    },
+    "Set Mute": {
+      "menu": "",
+      "callback": "setMute",
+      "parameters": {
+        "Muted": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    },
+    "Set Video": {
+      "menu": "",
+      "callback": "setVideo",
+      "parameters": {
+        "Video Off": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    },
+    "Set Hand Raised": {
+      "menu": "",
+      "callback": "setHandRaised",
+      "parameters": {
+        "Raised": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    }
+  }
 }
