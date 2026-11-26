@@ -2,8 +2,8 @@
   "name": "Zoom Meeting Web Client",
   "type": "WebSocket Server",
   "path": "Software",
-  "version": "1.2.0",
-  "description": "Receives Zoom Web Client meeting events and sends bidirectional commands (chat, reactions, mute, video, hand raised) over WebSocket",
+  "version": "1.4.0",
+  "description": "Receives Zoom Web Client meeting events (including Host controls) and sends bidirectional commands over WebSocket",
   "url": "https://github.com/UUoocl/Zoom-Meeting-Web-Client-Chataigne-Module",
   "hasInput": true,
   "hasOutput": true,
@@ -60,12 +60,108 @@
       "readOnly": true,
       "description": "Whether the local user's hand is currently raised"
     },
+    "isHost": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the local user has Host controls in the meeting"
+    },
+    "waitingRoomEnabled": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the Waiting Room is enabled (updated when Host tools panel is open)"
+    },
+    "meetingLocked": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the meeting is locked (updated when Host tools panel is open)"
+    },
+    "hideProfilePictures": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether participant profile pictures are hidden (updated when Host tools panel is open)"
+    },
+    "allowRenameSelf": {
+      "type": "Boolean",
+      "default": true,
+      "readOnly": true,
+      "description": "Whether participants can rename themselves (updated when Host tools -> Participants is open)"
+    },
+    "allowUnmuteSelf": {
+      "type": "Boolean",
+      "default": true,
+      "readOnly": true,
+      "description": "Whether participants can unmute themselves (updated when Host tools -> Participants is open)"
+    },
+    "allowStartVideo": {
+      "type": "Boolean",
+      "default": true,
+      "readOnly": true,
+      "description": "Whether participants can start video (updated when Host tools -> Participants is open)"
+    },
+    "focusMode": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether Focus mode is enabled (updated when Host tools -> Advanced is open)"
+    },
+    "screenSharing": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether someone else is currently sharing their screen"
+    },
+    "screenSharer": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Name of the participant currently sharing their screen"
+    },
+    "localSharing": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the local user is currently sharing their screen"
+    },
+    "currentView": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Current Zoom layout view (e.g. Gallery View, Speaker View)"
+    },
+    "participantsPanelOpen": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the Participants side panel is currently open"
+    },
+    "chatPanelOpen": {
+      "type": "Boolean",
+      "default": false,
+      "readOnly": true,
+      "description": "Whether the Chat side panel is currently open"
+    },
+    "chatRecipient": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Currently selected Zoom chat recipient (Everyone or participant name)"
+    },
     "participantsCount": {
       "type": "Integer",
       "default": 0,
       "min": 0,
       "readOnly": true,
       "description": "Current number of participants in the Zoom meeting"
+    },
+    "removedParticipant": {
+      "type": "String",
+      "default": "",
+      "readOnly": true,
+      "description": "Name of the participant who most recently left the meeting"
     },
     "lastChatSender": {
       "type": "String",
@@ -108,7 +204,7 @@
       "type": "String",
       "default": "",
       "readOnly": true,
-      "description": "Last event type received from the Zoom injector (connectionStatus, stateUpdate, chatMessage, reaction)"
+      "description": "Last event type received from the Zoom injector"
     },
     "error": {
       "type": "String",
@@ -129,7 +225,7 @@
     "onStateChanged": {
       "type": "Trigger",
       "readOnly": true,
-      "description": "Triggered when muted, videoOff, handRaised, activeSpeaker, participantsCount, or meetingTitle changes"
+      "description": "Triggered when meeting state values change"
     },
     "responseReceived": {
       "type": "Trigger",
@@ -146,6 +242,10 @@
       "callback": "sendChatMessage",
       "parameters": {
         "Message": {
+          "type": "String",
+          "default": ""
+        },
+        "Recipient": {
           "type": "String",
           "default": ""
         }
@@ -201,6 +301,182 @@
         "Raised": {
           "type": "Boolean",
           "default": true
+        }
+      }
+    },
+    "Set View": {
+      "menu": "",
+      "callback": "setView",
+      "parameters": {
+        "View": {
+          "type": "Enum",
+          "options": {
+            "Speaker View": "Speaker View",
+            "Gallery View": "Gallery View",
+            "Multi-speaker View": "Multi-speaker View",
+            "Hide Self View": "Hide Self View",
+            "Hide Non-video Participants": "Hide Non-video Participants",
+            "Fullscreen": "Fullscreen"
+          }
+        }
+      }
+    },
+    "Set Participants Panel": {
+      "menu": "",
+      "callback": "setParticipantsPanel",
+      "parameters": {
+        "Open": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    },
+    "Set Chat Panel": {
+      "menu": "",
+      "callback": "setChatPanel",
+      "parameters": {
+        "Open": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    },
+    "Pin Participant": {
+      "menu": "",
+      "callback": "pinParticipant",
+      "parameters": {
+        "Participant Name": {
+          "type": "String",
+          "default": ""
+        }
+      }
+    },
+    "Toggle Captions": {
+      "menu": "",
+      "callback": "toggleCaptions"
+    },
+    "Toggle Record": {
+      "menu": "",
+      "callback": "toggleRecord"
+    },
+    "Toggle Stop Incoming Video": {
+      "menu": "",
+      "callback": "toggleStopIncomingVideo"
+    },
+    "Screen Share Action": {
+      "menu": "",
+      "callback": "screenShareAction",
+      "parameters": {
+        "Action": {
+          "type": "Enum",
+          "options": {
+            "Open Share": "open",
+            "Pause Share": "pause",
+            "Stop Share": "stop"
+          }
+        }
+      }
+    },
+    "Select Audio Device": {
+      "menu": "",
+      "callback": "selectAudioDevice",
+      "parameters": {
+        "Device Name": {
+          "type": "String",
+          "default": ""
+        }
+      }
+    },
+    "Select Video Device": {
+      "menu": "",
+      "callback": "selectVideoDevice",
+      "parameters": {
+        "Device Name": {
+          "type": "String",
+          "default": ""
+        }
+      }
+    },
+    "Toggle Noise Suppression": {
+      "menu": "",
+      "callback": "toggleNoiseSuppression"
+    },
+    "Mute All": {
+      "menu": "Host",
+      "callback": "muteAll"
+    },
+    "Ask All to Unmute": {
+      "menu": "Host",
+      "callback": "askAllToUnmute"
+    },
+    "Toggle Mute Upon Entry": {
+      "menu": "Host",
+      "callback": "toggleMuteUponEntry"
+    },
+    "Participant Host Action": {
+      "menu": "Host",
+      "callback": "participantHostAction",
+      "parameters": {
+        "Participant Name": {
+          "type": "String",
+          "default": ""
+        },
+        "Action": {
+          "type": "Enum",
+          "options": {
+            "Mute": "Mute",
+            "Ask to Unmute": "Ask to Unmute",
+            "Stop Video": "Stop Video",
+            "Ask For Start Video": "Ask For Start Video",
+            "Spotlight for Everyone": "Spotlight for Everyone",
+            "Make Host": "Make Host",
+            "Make Co-Host": "Make Co-Host",
+            "Put in Waiting Room": "Put in Waiting Room",
+            "Remove": "Remove"
+          }
+        }
+      }
+    },
+    "Set Host Option": {
+      "menu": "Host",
+      "callback": "setHostOption",
+      "parameters": {
+        "Option": {
+          "type": "Enum",
+          "options": {
+            "Lock Meeting": "Lock Meeting",
+            "Enable Waiting Room": "Enable waiting room",
+            "Hide Profile Pictures": "Hide profile pictures",
+            "Allow Rename Themselves": "allow participant to Rename Themselves",
+            "Allow Unmute Themselves": "allow participant to Unmute Themselves",
+            "Allow Start Video": "allow participant to Start Video",
+            "Focus Mode": "Focus mode"
+          }
+        },
+        "Enabled": {
+          "type": "Boolean",
+          "default": true
+        }
+      }
+    },
+    "Suspend Participant Activities": {
+      "menu": "Host",
+      "callback": "suspendParticipantActivities"
+    },
+    "Open Breakout Rooms": {
+      "menu": "Host",
+      "callback": "openBreakoutRooms"
+    },
+    "Leave or End Meeting": {
+      "menu": "Host",
+      "callback": "leaveOrEndMeeting",
+      "parameters": {
+        "Action": {
+          "type": "Enum",
+          "options": {
+            "Leave Meeting": "Leave Meeting",
+            "End Meeting for All": "End Meeting for All"
+          }
         }
       }
     }

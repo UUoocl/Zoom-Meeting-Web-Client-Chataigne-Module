@@ -15,6 +15,7 @@
     var isCleanedUp = false;
     var reactionCount = 0;
     var lastTileReactions = {};
+    var lastParticipantNames = {};
     var recentLauncherReactionAt = 0;
 
     // State Tracking
@@ -23,6 +24,21 @@
         muted: null,
         videoOff: null,
         handRaised: null,
+        isHost: null,
+        waitingRoomEnabled: null,
+        meetingLocked: null,
+        hideProfilePictures: null,
+        allowRenameSelf: null,
+        allowUnmuteSelf: null,
+        allowStartVideo: null,
+        focusMode: null,
+        screenSharing: null,
+        screenSharer: null,
+        localSharing: null,
+        currentView: null,
+        participantsPanelOpen: null,
+        chatPanelOpen: null,
+        chatRecipient: null,
         activeSpeaker: null,
         participantsCount: null,
         participantsJson: null,
@@ -51,12 +67,16 @@
             connectionStatus: 'connected',
             error: ''
         };
-        if (lastState.meetingTitle !== null) snapshot.meetingTitle = lastState.meetingTitle;
-        if (lastState.muted !== null) snapshot.muted = lastState.muted;
-        if (lastState.videoOff !== null) snapshot.videoOff = lastState.videoOff;
-        if (lastState.handRaised !== null) snapshot.handRaised = lastState.handRaised;
-        if (lastState.activeSpeaker !== null) snapshot.activeSpeaker = lastState.activeSpeaker;
-        if (lastState.participantsCount !== null) snapshot.participantsCount = lastState.participantsCount;
+        [
+            'meetingTitle', 'muted', 'videoOff', 'handRaised', 'isHost',
+            'waitingRoomEnabled', 'meetingLocked', 'hideProfilePictures',
+            'allowRenameSelf', 'allowUnmuteSelf', 'allowStartVideo', 'focusMode',
+            'screenSharing', 'screenSharer', 'localSharing', 'currentView',
+            'participantsPanelOpen', 'chatPanelOpen', 'chatRecipient',
+            'activeSpeaker', 'participantsCount'
+        ].forEach(function(k) {
+            if (lastState[k] !== null) snapshot[k] = lastState[k];
+        });
         if (lastState.participantsJson !== null) {
             try { snapshot.participants = JSON.parse(lastState.participantsJson); } catch (e) {}
         }
@@ -103,6 +123,46 @@
         };
     }
 
+    function isVisible(el) {
+        return !!(el && el.offsetParent !== null);
+    }
+
+    // Open a dropdown/menu via triggerSel, find matching item via itemSel, and click it
+    function clickMenuOption(doc, triggerSel, menuSel, itemSel, matchFn, delayMs) {
+        var findInMenu = function() {
+            var root = doc.querySelector(menuSel) || doc;
+            var items = root.querySelectorAll(itemSel);
+            for (var i = 0; i < items.length; i++) {
+                if (matchFn(items[i])) return items[i];
+            }
+            return null;
+        };
+
+        if (doc.querySelector(menuSel)) {
+            var existing = findInMenu();
+            if (existing) {
+                existing.click();
+                return;
+            }
+        }
+
+        var trigger = doc.querySelector(triggerSel);
+        if (!trigger) {
+            console.warn("[Zoom Sync] Menu trigger not found:", triggerSel);
+            return;
+        }
+        trigger.click();
+        setTimeout(function() {
+            var target = findInMenu();
+            if (target) {
+                target.click();
+            } else {
+                console.warn("[Zoom Sync] Menu option not found in", menuSel);
+                trigger.click();
+            }
+        }, delayMs || 180);
+    }
+
     // Handle bidirectional commands sent from Chataigne
     function handleCommand(cmd) {
         var doc = getZoomDocument();
@@ -111,67 +171,308 @@
             var micBtn = doc.querySelector('button.join-audio-container__btn, button[aria-label*="microphone"], button[aria-label*="Mute"], button[aria-label*="Unmute"]');
             if (micBtn) {
                 var isCurrentlyMuted = (micBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('unmute') !== -1;
-                if (isCurrentlyMuted !== !!cmd.value) {
-                    micBtn.click();
-                }
+                if (isCurrentlyMuted !== !!cmd.value) micBtn.click();
             }
         } else if (cmd.action === 'setVideo') {
             var videoBtn = doc.querySelector('button.send-video-container__btn, button[aria-label*="video"], button[aria-label*="Video"]');
             if (videoBtn) {
                 var isCurrentlyOff = (videoBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('start') !== -1;
-                if (isCurrentlyOff !== !!cmd.value) {
-                    videoBtn.click();
-                }
+                if (isCurrentlyOff !== !!cmd.value) videoBtn.click();
             }
         } else if (cmd.action === 'setHandRaised') {
             var handBtn = doc.querySelector('button.nonverbal-feedback, button[aria-label*="Raise hand"], button[aria-label*="Lower hand"]');
             if (handBtn) {
                 var isCurrentlyRaised = (handBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('lower') !== -1;
-                if (isCurrentlyRaised !== !!cmd.value) {
-                    handBtn.click();
-                }
+                if (isCurrentlyRaised !== !!cmd.value) handBtn.click();
             } else {
                 triggerPickerOption(doc, 'Raise Hand');
             }
         } else if (cmd.action === 'sendReaction' && cmd.reaction) {
             triggerPickerOption(doc, cmd.reaction);
         } else if (cmd.action === 'sendChatMessage' && cmd.message) {
-            sendZoomChatMessage(doc, cmd.message);
+            sendZoomChatMessage(doc, cmd.message, cmd.recipient || '');
+        } else if (cmd.action === 'setView' && cmd.view) {
+            clickMenuOption(
+                doc,
+                'button.full-screen-widget__button[aria-label="View"]',
+                '.full-screen-widget__pop-menu.show',
+                'a.dropdown-item',
+                function(el) {
+                    return (el.getAttribute('aria-label') || '').toLowerCase() === cmd.view.toLowerCase();
+                }
+            );
+        } else if (cmd.action === 'setParticipantsPanel') {
+            var pOpen = isVisible(doc.querySelector('.participants-section-container'));
+            if (pOpen !== !!cmd.value) {
+                var pBtn = doc.querySelector('button[aria-label*="participants list pane"], button[aria-label*="particpants"]');
+                if (pBtn) pBtn.click();
+            }
+        } else if (cmd.action === 'setChatPanel') {
+            var cOpen = isVisible(doc.querySelector('.chat-container'));
+            if (cOpen !== !!cmd.value) {
+                var cBtn = doc.querySelector('button[aria-label*="chat panel"]');
+                if (cBtn) cBtn.click();
+            }
+        } else if (cmd.action === 'pinParticipant' && cmd.name) {
+            pinParticipantByName(doc, cmd.name);
+        } else if (cmd.action === 'moreAction' && cmd.item) {
+            clickMenuOption(
+                doc,
+                'button.more-button__dropdown-toggle[aria-label^="More meeting control"]',
+                '.more-button__pop-menu.show',
+                'button.more-button__item-box',
+                function(el) {
+                    var aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    var txt = (el.textContent || '').trim().toLowerCase();
+                    return aria === cmd.item.toLowerCase() || txt === cmd.item.toLowerCase();
+                }
+            );
+        } else if (cmd.action === 'screenShareAction') {
+            if (cmd.mode === 'open') {
+                var shareBtn = doc.querySelector('button.sharing-entry-button-container[aria-label="Share"]');
+                if (shareBtn) shareBtn.click();
+            } else if (cmd.mode === 'pause') {
+                var pauseBtn = doc.querySelector('button.sharer-button--independent-btn[aria-label="Pause share"]');
+                if (pauseBtn) pauseBtn.click();
+            } else if (cmd.mode === 'stop') {
+                var stopBtn = doc.querySelector('button.sharer-button--stop');
+                if (stopBtn) stopBtn.click();
+            }
+        } else if (cmd.action === 'selectAudioDevice' && cmd.name) {
+            clickMenuOption(
+                doc,
+                'button[aria-label="More audio controls"]',
+                '.audio-option-menu.show',
+                'a.audio-option-menu__device-item',
+                function(el) {
+                    return (el.getAttribute('aria-label') || '').toLowerCase().indexOf(cmd.name.toLowerCase()) !== -1;
+                }
+            );
+        } else if (cmd.action === 'toggleNoiseSuppression') {
+            clickMenuOption(
+                doc,
+                'button[aria-label="More audio controls"]',
+                '.audio-option-menu.show',
+                'a.dropdown-item',
+                function(el) {
+                    return (el.textContent || '').toLowerCase().indexOf('noise suppression') !== -1;
+                }
+            );
+        } else if (cmd.action === 'selectVideoDevice' && cmd.name) {
+            clickMenuOption(
+                doc,
+                'button[aria-label="More video controls"]',
+                '.video-option-menu__pop-menu.show',
+                'a.dropdown-item',
+                function(el) {
+                    return (el.getAttribute('aria-label') || '').toLowerCase().indexOf(cmd.name.toLowerCase()) !== -1;
+                }
+            );
+        } else if (cmd.action === 'muteAll') {
+            ensureParticipantsPanel(doc, function() {
+                var btns = doc.querySelectorAll('button.participants-section-container__buttom-button');
+                for (var i = 0; i < btns.length; i++) {
+                    if ((btns[i].textContent || '').trim().toLowerCase() === 'mute all') {
+                        btns[i].click();
+                        return;
+                    }
+                }
+            });
+        } else if (cmd.action === 'participantsMoreAction' && cmd.item) {
+            ensureParticipantsPanel(doc, function() {
+                clickMenuOption(
+                    doc,
+                    'button[aria-label="More managing participants options"]',
+                    '.participant-host-dropdown.show',
+                    'a.dropdown-item',
+                    function(el) {
+                        return (el.textContent || '').trim().toLowerCase() === cmd.item.toLowerCase();
+                    }
+                );
+            });
+        } else if (cmd.action === 'participantHostAction' && cmd.name && cmd.item) {
+            runParticipantHostAction(doc, cmd.name, cmd.item);
+        } else if (cmd.action === 'setHostOption' && cmd.option) {
+            setHostSwitchOption(doc, cmd.option, !!cmd.value);
+        } else if (cmd.action === 'suspendParticipantActivities') {
+            openHostToolsSubmenu(doc, 'Participants', function() {
+                var btn = doc.querySelector('button.host-tools-panel__danger-action');
+                if (btn) btn.click();
+            });
+        } else if (cmd.action === 'leaveOrEndMeeting' && cmd.mode) {
+            var endBtn = doc.querySelector('button.footer-button__button[aria-label="End"], button.footer-button__button[aria-label="Leave"]');
+            if (endBtn) {
+                endBtn.click();
+                setTimeout(function() {
+                    var items = doc.querySelectorAll('.leave-meeting-options button[role="menuitem"]');
+                    for (var i = 0; i < items.length; i++) {
+                        if ((items[i].textContent || '').trim().toLowerCase() === cmd.mode.toLowerCase()) {
+                            items[i].click();
+                            return;
+                        }
+                    }
+                }, 180);
+            }
+        }
+    }
+
+    function ensureParticipantsPanel(doc, cb) {
+        if (isVisible(doc.querySelector('.participants-section-container'))) {
+            cb();
+            return;
+        }
+        var pBtn = doc.querySelector('button[aria-label*="participants list pane"], button[aria-label*="particpants"]');
+        if (pBtn) {
+            pBtn.click();
+            setTimeout(cb, 300);
+        }
+    }
+
+    function openHostToolsSubmenu(doc, submenuLabel, cb) {
+        var openPanel = function() {
+            if (!submenuLabel) {
+                cb();
+                return;
+            }
+            var subBtn = doc.querySelector('button.host-tools-panel__menu-button[aria-label="' + submenuLabel + '"]');
+            if (subBtn) {
+                subBtn.click();
+                setTimeout(cb, 180);
+            } else {
+                cb();
+            }
+        };
+
+        if (isVisible(doc.querySelector('.host-tools-panel'))) {
+            var backBtn = doc.querySelector('button.panel-shell-header__back[aria-label="Back"]');
+            if (backBtn) {
+                backBtn.click();
+                setTimeout(openPanel, 150);
+            } else {
+                openPanel();
+            }
+            return;
+        }
+
+        var hostBtn = doc.querySelector('button[aria-label="Host tools"]');
+        if (!hostBtn) {
+            console.warn("[Zoom Sync] Host tools button not found.");
+            return;
+        }
+        hostBtn.click();
+        setTimeout(openPanel, 220);
+    }
+
+    function setHostSwitchOption(doc, optionPrefix, enabled) {
+        var submenu = '';
+        if (optionPrefix.indexOf('allow participant') === 0) submenu = 'Participants';
+        else if (optionPrefix === 'Focus mode') submenu = 'Advanced';
+
+        openHostToolsSubmenu(doc, submenu, function() {
+            var sw = doc.querySelector('input.prism-SwitchBase-input[role="switch"][aria-label^="' + optionPrefix + '"]');
+            if (sw) {
+                var current = sw.getAttribute('aria-checked') === 'true';
+                if (current !== enabled) sw.click();
+            } else {
+                console.warn("[Zoom Sync] Host switch not found:", optionPrefix);
+            }
+            setTimeout(function() {
+                checkMeetingState();
+                var closeBtn = doc.querySelector('button.host-tools-panel__close-right[aria-label="Close"]');
+                if (closeBtn) closeBtn.click();
+            }, 180);
+        });
+    }
+
+    function runParticipantHostAction(doc, targetName, actionLabel) {
+        ensureParticipantsPanel(doc, function() {
+            var rows = doc.querySelectorAll('.item-pos.participants-li');
+            var needle = targetName.toLowerCase();
+            for (var i = 0; i < rows.length; i++) {
+                var aria = (rows[i].getAttribute('aria-label') || '').toLowerCase();
+                var text = (rows[i].textContent || '').toLowerCase();
+                if (aria.indexOf(needle) !== -1 || text.indexOf(needle) !== -1) {
+                    var quickBtn = rows[i].querySelector('button.participants-icon__action[aria-label="' + actionLabel + '"]');
+                    if (quickBtn) {
+                        quickBtn.click();
+                        return;
+                    }
+                    var moreBtn = rows[i].querySelector('button.participants-icon__action[aria-label="More options"]');
+                    if (moreBtn) {
+                        moreBtn.click();
+                        setTimeout(function() {
+                            var items = doc.querySelectorAll('.zmu-portal-dropdown__menu-list button.zmu-portal-dropdown__menu-item-button');
+                            for (var j = 0; j < items.length; j++) {
+                                if ((items[j].textContent || '').trim().toLowerCase() === actionLabel.toLowerCase()) {
+                                    items[j].click();
+                                    return;
+                                }
+                            }
+                            console.warn("[Zoom Sync] Participant action not found:", actionLabel);
+                        }, 180);
+                    }
+                    return;
+                }
+            }
+        });
+    }
+
+    function pinParticipantByName(doc, targetName) {
+        var clickMoreAndPin = function() {
+            var rows = doc.querySelectorAll('.item-pos.participants-li');
+            var needle = targetName.toLowerCase();
+            for (var i = 0; i < rows.length; i++) {
+                var aria = (rows[i].getAttribute('aria-label') || '').toLowerCase();
+                var text = (rows[i].textContent || '').toLowerCase();
+                if (aria.indexOf(needle) !== -1 || text.indexOf(needle) !== -1) {
+                    var moreBtn = rows[i].querySelector('button.participants-icon__action[aria-label="More options"]');
+                    if (moreBtn) {
+                        moreBtn.click();
+                        setTimeout(function() {
+                            var items = doc.querySelectorAll('.zmu-portal-dropdown__menu-list button.zmu-portal-dropdown__menu-item-button');
+                            for (var j = 0; j < items.length; j++) {
+                                var txt = (items[j].textContent || '').trim().toLowerCase();
+                                if (txt.indexOf('pin') !== -1) {
+                                    items[j].click();
+                                    return;
+                                }
+                            }
+                        }, 180);
+                    }
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (isVisible(doc.querySelector('.participants-section-container'))) {
+            clickMoreAndPin();
+            return;
+        }
+        var pBtn = doc.querySelector('button[aria-label*="participants list pane"], button[aria-label*="particpants"]');
+        if (pBtn) {
+            pBtn.click();
+            setTimeout(clickMoreAndPin, 300);
         }
     }
 
     function triggerPickerOption(doc, label) {
-        var findOption = function() {
-            var btns = doc.querySelectorAll('button.reaction-simple-picker__block');
-            for (var i = 0; i < btns.length; i++) {
-                var aria = (btns[i].getAttribute('aria-label') || '').trim();
-                var txt = (btns[i].textContent || '').trim();
-                if (aria.toLowerCase() === label.toLowerCase() || txt.toLowerCase() === label.toLowerCase()) {
-                    return btns[i];
-                }
-            }
-            return null;
-        };
-
-        var existing = findOption();
-        if (existing) {
-            existing.click();
-            return;
-        }
-
-        var reactToggle = doc.querySelector('button[aria-label="React"]');
-        if (reactToggle) {
-            reactToggle.click();
-            setTimeout(function() {
-                var btn = findOption();
-                if (btn) btn.click();
-                else console.warn("[Zoom Sync] Reaction option not found:", label);
-            }, 150);
-        }
+        clickMenuOption(
+            doc,
+            'button[aria-label="React"]',
+            '.reaction-simple-picker__block',
+            'button.reaction-simple-picker__block',
+            function(el) {
+                var aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                var txt = (el.textContent || '').trim().toLowerCase();
+                return aria === label.toLowerCase() || txt === label.toLowerCase();
+            },
+            150
+        );
     }
 
-    function sendZoomChatMessage(doc, message) {
-        var trySend = function() {
+    function sendZoomChatMessage(doc, message, recipient) {
+        var doTypeAndSend = function() {
             var editor = doc.querySelector('.tiptap.ProseMirror[contenteditable="true"], .tiptap.ProseMirror');
             if (!editor) return false;
 
@@ -185,28 +486,50 @@
             }
 
             setTimeout(function() {
-                editor.dispatchEvent(new KeyboardEvent('keydown', {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true
-                }));
-            }, 50);
+                var sendBtn = doc.querySelector('button.chat-rtf-box__send[aria-label="send"]:not(.chat-rtf-box__send--disabled)');
+                if (sendBtn) {
+                    sendBtn.click();
+                } else {
+                    editor.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Enter',
+                        code: 'Enter',
+                        keyCode: 13,
+                        which: 13,
+                        bubbles: true,
+                        cancelable: true
+                    }));
+                }
+            }, 60);
             return true;
         };
 
-        if (trySend()) return;
+        var afterPanelOpen = function() {
+            if (recipient) {
+                clickMenuOption(
+                    doc,
+                    'button.chat-receiver-list__receiver',
+                    '.chat-receiver-list .dropdown-menu.show',
+                    'a.chat-receiver-list__menu-item',
+                    function(el) {
+                        return (el.textContent || '').trim().toLowerCase().indexOf(recipient.toLowerCase()) !== -1;
+                    },
+                    150
+                );
+                setTimeout(doTypeAndSend, 260);
+            } else {
+                doTypeAndSend();
+            }
+        };
+
+        if (isVisible(doc.querySelector('.chat-container'))) {
+            afterPanelOpen();
+            return;
+        }
 
         var chatToggle = doc.querySelector('button[aria-label*="open the chat panel"]');
         if (chatToggle) {
             chatToggle.click();
-            setTimeout(function() {
-                if (!trySend()) {
-                    console.warn("[Zoom Sync] Chat editor (.tiptap.ProseMirror) not found.");
-                }
-            }, 300);
+            setTimeout(afterPanelOpen, 300);
         }
     }
 
@@ -243,12 +566,12 @@
         }
     }
 
-    // Scrape Per-Participant Audio, Video, Hand Raised, and Reaction Status from Gallery Video Tiles
+    // Scrape Per-Participant Status from Gallery Video Tiles and Participants Panel Rows
     function scrapeParticipants(doc) {
-        var tiles = doc.querySelectorAll('.gallery-video-container__video-frame');
-        if (!tiles || tiles.length === 0) return null;
-
         var participants = {};
+
+        // A. Video Tiles
+        var tiles = doc.querySelectorAll('.gallery-video-container__video-frame');
         for (var i = 0; i < tiles.length; i++) {
             var tile = tiles[i];
             var nameEl = tile.querySelector('.video-avatar__avatar-footer, .video-avatar__avatar-name');
@@ -297,6 +620,43 @@
                 reactionCode: tileReactionCode
             };
         }
+
+        // B. Participants Panel Rows (enriches role & captures off-screen participants when panel is open)
+        var rows = doc.querySelectorAll('.item-pos.participants-li');
+        for (var j = 0; j < rows.length; j++) {
+            var row = rows[j];
+            var aria = row.getAttribute('aria-label') || '';
+            if (!aria) continue;
+            var parts = aria.split(',');
+            var rawName = (parts[0] || '').trim();
+            if (!rawName) continue;
+
+            var role = '';
+            var cleanName = rawName.replace(/\s*\((Host|Co-host|Me)\)\s*$/i, function(_, r) {
+                role = r;
+                return '';
+            }).trim();
+            if (!cleanName) continue;
+
+            var lowerAria = aria.toLowerCase();
+            var rowMuted = lowerAria.indexOf('audio muted') !== -1;
+            var rowVideoOff = lowerAria.indexOf('video off') !== -1;
+
+            if (!participants[cleanName]) {
+                participants[cleanName] = {
+                    muted: rowMuted,
+                    videoOff: rowVideoOff,
+                    handRaised: !!row.querySelector('[class*="lazy-icon-nvf/270b"]'),
+                    reaction: '',
+                    reactionCode: ''
+                };
+            } else {
+                participants[cleanName].muted = rowMuted;
+                participants[cleanName].videoOff = rowVideoOff;
+            }
+            if (role) participants[cleanName].role = role;
+        }
+
         return Object.keys(participants).length > 0 ? participants : null;
     }
 
@@ -339,7 +699,62 @@
             state.handRaised = null;
         }
 
-        // 4. Participants Count (note: Zoom uses "particpants" typo in aria-label)
+        // 3b. Host Role & Host Tools Switches (when Host tools panel is open)
+        state.isHost = !!doc.querySelector('button[aria-label="Host tools"], button.footer-button__button[aria-label="End"]');
+        if (isVisible(doc.querySelector('.host-tools-panel'))) {
+            var hostSwitchMap = {
+                waitingRoomEnabled: 'Enable waiting room',
+                meetingLocked: 'Lock Meeting',
+                hideProfilePictures: 'Hide profile pictures',
+                allowRenameSelf: 'allow participant to Rename Themselves',
+                allowUnmuteSelf: 'allow participant to Unmute Themselves',
+                allowStartVideo: 'allow participant to Start Video',
+                focusMode: 'Focus mode'
+            };
+            Object.keys(hostSwitchMap).forEach(function(k) {
+                var sw = doc.querySelector('input.prism-SwitchBase-input[role="switch"][aria-label^="' + hostSwitchMap[k] + '"]');
+                if (sw) {
+                    state[k] = sw.getAttribute('aria-checked') === 'true';
+                }
+            });
+        }
+
+        // 4. Screen Sharing State
+        var shareLayout = doc.querySelector('.sharing-layout, #sharee-container');
+        var shareTip = doc.querySelector('.sharee-sharing-indicator__tip');
+        var isViewingShare = isVisible(shareLayout) && !!shareTip && shareTip.textContent.trim() !== '';
+        state.screenSharing = isViewingShare;
+        if (isViewingShare) {
+            var tipText = shareTip.textContent.trim();
+            var sharerMatch = tipText.match(/viewing\s+(.+?)'s\s+screen/i);
+            state.screenSharer = sharerMatch ? sharerMatch[1].trim() : tipText;
+        } else {
+            state.screenSharer = '';
+        }
+        state.localSharing = isVisible(doc.querySelector('.sharer-controlbar-container__main-area'));
+
+        // 5. Current View & Panel Open States
+        var checkedView = doc.querySelector('.full-screen-widget__pop-menu--checked');
+        if (checkedView) {
+            state.currentView = (checkedView.getAttribute('aria-label') || '').trim();
+        } else {
+            var viewSvg = doc.querySelector('button.full-screen-widget__button[aria-label="View"] svg');
+            if (viewSvg) {
+                var svgCls = viewSvg.getAttribute('class') || '';
+                if (svgCls.indexOf('Gallery') !== -1) state.currentView = 'Gallery View';
+                else if (svgCls.indexOf('Speaker') !== -1) state.currentView = 'Speaker View';
+                else if (svgCls.indexOf('Multi') !== -1) state.currentView = 'Multi-speaker View';
+            }
+        }
+        state.participantsPanelOpen = isVisible(doc.querySelector('.participants-section-container'));
+        state.chatPanelOpen = isVisible(doc.querySelector('.chat-container'));
+
+        var recBtn = doc.querySelector('button.chat-receiver-list__receiver');
+        if (recBtn && isVisible(recBtn)) {
+            state.chatRecipient = recBtn.textContent.trim();
+        }
+
+        // 6. Participants Count (note: Zoom uses "particpants" typo in aria-label)
         var partEl = doc.querySelector('#participant > div > button > div > span > span') ||
                      doc.querySelector('#participant > div > button > div > span');
         if (partEl) {
@@ -364,14 +779,23 @@
             }
         }
 
-        // 5. Active Speaker
-        var activeSpeakerEl = doc.querySelector('.active-speaker, [class*="active-speaker"], [class*="speaker-active"]');
-        if (activeSpeakerEl) {
-            state.activeSpeaker = activeSpeakerEl.textContent.trim();
+        // 7. Active Speaker (Participants speaking icon first, then tile fallback)
+        var speakingIcon = doc.querySelector('.item-pos.participants-li .participants-icon__voip-speaking-icon');
+        if (speakingIcon) {
+            var speakingRow = speakingIcon.closest('.participants-li');
+            if (speakingRow) {
+                var sAria = speakingRow.getAttribute('aria-label') || '';
+                state.activeSpeaker = (sAria.split(',')[0] || '').replace(/\s*\((Host|Co-host|Me)\)\s*$/i, '').trim();
+            }
         } else {
-            var speakerThumbnail = doc.querySelector('.speaker-highlight, [class*="speaker-highlight"], [style*="border-color: rgb(45, 140, 255)"]');
-            if (speakerThumbnail) {
-                state.activeSpeaker = speakerThumbnail.textContent.trim();
+            var activeSpeakerEl = doc.querySelector('.active-speaker, [class*="active-speaker"], [class*="speaker-active"]');
+            if (activeSpeakerEl) {
+                state.activeSpeaker = activeSpeakerEl.textContent.trim();
+            } else {
+                var speakerThumbnail = doc.querySelector('.speaker-highlight, [class*="speaker-highlight"], [style*="border-color: rgb(45, 140, 255)"]');
+                if (speakerThumbnail) {
+                    state.activeSpeaker = speakerThumbnail.textContent.trim();
+                }
             }
         }
 
@@ -379,7 +803,14 @@
         var changes = { event: 'stateUpdate' };
         var hasChanges = false;
 
-        ['meetingTitle', 'muted', 'videoOff', 'handRaised', 'activeSpeaker', 'participantsCount'].forEach(function(key) {
+        [
+            'meetingTitle', 'muted', 'videoOff', 'handRaised', 'isHost',
+            'waitingRoomEnabled', 'meetingLocked', 'hideProfilePictures',
+            'allowRenameSelf', 'allowUnmuteSelf', 'allowStartVideo', 'focusMode',
+            'screenSharing', 'screenSharer', 'localSharing', 'currentView',
+            'participantsPanelOpen', 'chatPanelOpen', 'chatRecipient',
+            'activeSpeaker', 'participantsCount'
+        ].forEach(function(key) {
             if (state[key] !== lastState[key] && state[key] !== undefined && state[key] !== null) {
                 lastState[key] = state[key];
                 changes[key] = state[key];
@@ -387,15 +818,31 @@
             }
         });
 
-        // 6. Per-Participant Audio/Video Status
-        var participants = scrapeParticipants(doc);
-        if (participants) {
+        // 8. Per-Participant Status & Leave Detection
+        var participants = scrapeParticipants(doc) || {};
+        var currentNames = Object.keys(participants);
+
+        Object.keys(lastParticipantNames).forEach(function(prevName) {
+            if (!participants[prevName]) {
+                delete lastTileReactions[prevName];
+                sendToChataigne({
+                    event: 'participantLeft',
+                    removedParticipant: prevName
+                });
+            }
+        });
+        lastParticipantNames = {};
+        currentNames.forEach(function(n) { lastParticipantNames[n] = true; });
+
+        if (currentNames.length > 0) {
             var participantsJson = JSON.stringify(participants);
             if (participantsJson !== lastState.participantsJson) {
                 lastState.participantsJson = participantsJson;
                 changes.participants = participants;
                 hasChanges = true;
             }
+        } else if (lastState.participantsJson !== null) {
+            lastState.participantsJson = null;
         }
 
         if (hasChanges) {
@@ -407,13 +854,13 @@
         checkReactionObserver();
     }
 
-    // 7. Chat Messages Observer
+    // 9. Chat Messages Observer
     var observedChatContainer = null;
     var chatObserver = null;
 
     function checkChatObserver() {
         var doc = getZoomDocument();
-        var chatContainer = doc.querySelector('.chat-list, [class*="chat-list"], [class*="chat-messages"]');
+        var chatContainer = doc.querySelector('.chat-container__chat-list [data-testid="virtuoso-item-list"], .chat-list, [class*="chat-list"], [class*="chat-messages"]');
 
         if (chatContainer && chatContainer !== observedChatContainer) {
             if (chatObserver) {
@@ -462,7 +909,7 @@
         }
     }
 
-    // 8. Reactions Observer (user & participant floating emoji reactions)
+    // 10. Reactions Observer (user & participant floating emoji reactions)
     var observedReactionRoot = null;
     var reactionObserver = null;
 
